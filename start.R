@@ -137,11 +137,10 @@ seq2 = tonumbers(seq2letters)
 
 Q = jc()
 t = 0.25
-P = expm(Q*t)
+#P = expm(Q*t)
 d=0.05
 e=0.5
 
 pi = rep(0.25, 4)
 FM = forwardmatrix(seq1, seq2, pairhmm(d,e), P,pi)
 path = backsample(FM)
-write(draw.a(seq1letters,seq2letters,path), stderr())
