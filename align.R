@@ -79,28 +79,32 @@ choose = function(pr)
     s
 }
 
-# Choose integers for the states Match, Delete, Insert
+# Choose integers for the states Match, Delete, Insert, Start, End
 M = 1
 D = 2
 I = 3
-  
+S = 4
+E = 5  
 
 # Create the matrix of transition probabilities between states M,D,I
 pairhmm = function(d,e)
 {
-    T = matrix(nrow=3,ncol=3)
+    T = matrix(nrow=3,ncol=5)
     
     T[M,I] = d
     T[M,D] = d
     T[M,M] = 1-2*d
+    T[M,E] = 1
     
     T[I,M] = (1-e)*(1-2*d)
     T[I,I] = e + (1-e)*d
     T[I,D] = (1-e)*d
+    T[I,E] = 1
     
     T[D,M] = (1-e)*(1-2*d)
     T[D,I] = (1-e)*d
     T[D,D] = e + (1-e)*d
+    T[D,E] = 1
 
     T
 }
@@ -177,17 +181,21 @@ total.prob = function(FM)
 }
 
 # perform backwards sampling to sample a random alignment in proportion to its probability
-backsample = function(FM)
+backsample = function(FM,T)
 {
-    XX = dim(FM)[1]
-    YY = dim(FM)[2]
+    X = dim(FM)[1]
+    Y = dim(FM)[2]
 
-    x = XX
-    y = YY
+    # Start with emitting everying in x, everything in y, in the End state
+    x = X
+    y = Y
+    s = E
+
     states = c()
     while(x > 1 || y > 1)
     {
-        s = choose(FM[x,y,])
+#       Select a previous state s2 proportional to FM[x,y,s2] * T[s2,s]
+        s = choose(FM[x,y,]*T[,s])
 #        print(FM[x,y,])
 #        print(c(x,y,s))
         states = c(s,states)
@@ -227,7 +235,7 @@ e=0.5
 
 pi = rep(0.25, 4)
 FM = forwardmatrix(seq1, seq2, pairhmm(d,e), P,pi)
-path = backsample(FM)
+path = backsample(FM,pairhmm(d,e))
 write(draw.a(seq1letters,seq2letters,path), stderr())
 
 # Compute the full probability Pr(data,d,t)
@@ -292,5 +300,5 @@ for(iter in 0:niter)
 write(c(rej.t,rej.d),stderr())
 
 # write a final alignment to stderr
-path = backsample(forwardmatrix(seq1, seq2, pairhmm(d,e), P, pi))
+path = backsample(forwardmatrix(seq1, seq2, pairhmm(d,e), P, pi), pairhmm(d,e))
 write(draw.a(seq1letters,seq2letters,path), stderr())
