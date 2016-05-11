@@ -1,10 +1,9 @@
-# install.packages("seqinr")
-
 args <- commandArgs(trailingOnly = TRUE)
 
-require(seqinr,quietly=TRUE)
+require(seqinr,quietly=TRUE)  # install.packages("seqinr")
 require(Matrix,quietly=TRUE)
 
+# read first sequence in fasta file into character vector
 readfasta = function(filename)
 {
                                         # get string
@@ -13,11 +12,13 @@ readfasta = function(filename)
     seq = strsplit(seq,split="")[[1]]
 }
 
+# convert character vector to vector of integers
 tonumbers = function(letters)
 {
     letters = as.numeric(factor(letters,levels=c('A','T','G','C')))
 }
 
+# show the first or second sequence, where state S corresonds to a '-' in this sequence
 show.one = function(letters,path,S)
 {
     row = c()
@@ -37,12 +38,14 @@ show.one = function(letters,path,S)
     paste(row,collapse="")
 }
 
+# convert a sequence of states (path) into a readable alignment with letters
 draw.a = function(letters1,letters2,path)
 {
     paste(show.one(letters1,path,I),"\n",show.one(letters2,path,D),"\n",sep="",collapse="")
 }
 
 
+# wrap x on the range [0,b]
 wrap0 = function(x, b)
 {
     x = x %% (2*b)
@@ -52,12 +55,14 @@ wrap0 = function(x, b)
     x
 }
 
+# wrap x on range [a,b]
 wrap = function(x, a, b)
 {
-    a + wrap0(x-a,b)
+    a + wrap0(x-a,b-a)
 }
 
 
+# choose the 1st, 2nd, 3rd, etc. element of pr in proportion to their magnitude
 choose = function(pr)
 {
     pr = pr/sum(pr)
@@ -74,44 +79,33 @@ choose = function(pr)
     s
 }
 
+# Choose integers for the states Match, Delete, Insert
 M = 1
 D = 2
 I = 3
-S = 4
-E = 5
   
+
+# Create the matrix of transition probabilities between states M,D,I
 pairhmm = function(d,e)
 {
-    T = matrix(nrow=5,ncol=5)
+    T = matrix(nrow=3,ncol=3)
     
-#    T[M,S] = 0
     T[M,I] = d
     T[M,D] = d
     T[M,M] = 1-2*d
-#    T[M,E] = 1
     
-#    T[I,S] = 0
     T[I,M] = (1-e)*(1-2*d)
     T[I,I] = e + (1-e)*d
     T[I,D] = (1-e)*d
-#    T[I,E] = 1
     
-#    T[D,S] = 0
     T[D,M] = (1-e)*(1-2*d)
     T[D,I] = (1-e)*d
     T[D,D] = e + (1-e)*d
-#    T[D,E] = 1
-    
-#    for(i in 1:5) {
-#        T[E,i] = 0
-#    }
-    
-#    for(i in 1:5) {
-#        T[S,i] = T[M,i]
-#    }
+
     T
 }
 
+# jukes-cantor rate matrix
 jc = function()
 {
                                         # jukes cantor rate matrix
@@ -121,6 +115,7 @@ jc = function()
               1,1,1,-3), nrow=4)/3
 }
 
+# perform the forward algorithm to compute the dynamic programming matrix
 forwardmatrix = function(seq1,seq2,T,P,pi)
 {
     X = 1+length(seq1)
@@ -172,6 +167,7 @@ forwardmatrix = function(seq1,seq2,T,P,pi)
     FM
 }
 
+# find the total probability of all alignments, from the forward matrix
 total.prob = function(FM)
 {
     XX = dim(FM)[1]
@@ -180,6 +176,7 @@ total.prob = function(FM)
     FM[XX,YY,M] + FM[XX,YY,D] + FM[XX,YY,I]
 }
 
+# perform backwards sampling to sample a random alignment in proportion to its probability
 backsample = function(FM)
 {
     XX = dim(FM)[1]
@@ -212,23 +209,13 @@ backsample = function(FM)
     states
 }
 
-fullprob = function(d,t)
-{
-    total.prob(forwardmatrix(seq1,seq2,pairhmm(d,e),expm(Q*t), pi)) * dexp(t, rate=2.0)
-}
-    
-
-#FM
-#T
-#P
-#Q
-#total.prob(FM)
-#path
-
+# read the input sequences
 seq1letters = readfasta(args[1])
 seq2letters = readfasta(args[2])
+# how many iterations of MCMC
 niter = args[3]
 
+# convert the sequence strings to integers
 seq1 = tonumbers(seq1letters)
 seq2 = tonumbers(seq2letters)
 
@@ -242,18 +229,35 @@ pi = rep(0.25, 4)
 FM = forwardmatrix(seq1, seq2, pairhmm(d,e), P,pi)
 path = backsample(FM)
 write(draw.a(seq1letters,seq2letters,path), stderr())
-q()
 
+# Compute the full probability Pr(data,d,t)
+# * Here d is the probability of deletions/insertions
+# * t is the branch length between the sequence pair
+fullprob = function(d,t)
+{
+    total.prob(forwardmatrix(seq1,seq2,pairhmm(d,e),expm(Q*t), pi)) * dexp(t, rate=2.0)
+}
+    
+# print the header (Tracer format)
 cat("iter\tt\td\tpr\n")
+
+# count the number of proposed changes to t and d that were rejected
 rej.t = 0
 rej.d = 0
+
+# start the iterations of MCMC
 for(iter in 0:niter)
 {
     p = fullprob(d,t)
+
+# print a tab-delimited line of iterations (iter), branch length (t), gap opening probability (d), and log probability
     cat(sprintf("%i\t%f\t%f\t%f\n",iter,t,d,log(p)))
 
     {
-        t2 = abs(t + rnorm(1,mean=0,sd=0.20))
+        # propose a new branch length t2
+        t2 = abs(rnorm(1,mean=t,sd=0.20))
+
+        # accept or reject
         p2 = fullprob(d,t2)
         if (p2 > p || runif(1) < p2/p)
         {
@@ -267,7 +271,10 @@ for(iter in 0:niter)
     }
 
     {
+        # propose a new gap open probability d2
         d2 = wrap(rnorm(1,mean=d,sd=0.07),0,0.49)
+
+        # accept or reject
         p2 = fullprob(d2,t)
         if (p2 > p || runif(1) < p2/p)
         {
@@ -280,8 +287,10 @@ for(iter in 0:niter)
         }
     }
 }
+
+# write the number of reject moves to stderr
 write(c(rej.t,rej.d),stderr())
+
+# write a final alignment to stderr
 path = backsample(forwardmatrix(seq1, seq2, pairhmm(d,e), P, pi))
-#print(path)
-#print(seq1letters)
 write(draw.a(seq1letters,seq2letters,path), stderr())
